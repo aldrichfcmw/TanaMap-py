@@ -76,7 +76,6 @@ def btn_predict():
         time.sleep(1.5)
         log_data("Stopped! No Image Exist")
         return
-    time.sleep(3)
     log_data("Uploading Data To Server...")
     time.sleep(3)
     upload_data(token,cek_data)
@@ -233,7 +232,12 @@ def check_data(input_path):
     folders = [folder for folder in os.listdir(directory_path) if os.path.isdir(os.path.join(directory_path, folder))]
     folders.sort(key=lambda x: os.path.getctime(os.path.join(directory_path, x)), reverse=True)
     latest_folder = os.path.join(directory_path, folders[0])
-    image_list = check_folder(latest_folder)
+    if not check_folder(latest_folder):
+        log_data("Stopping...")
+        time.sleep(1.5)
+        log_data("Stopped! No Image Exist")
+        return
+    image_list = [file for file in os.listdir(latest_folder) if file.endswith(('.jpg', '.png','.JPG', '.PNG'))]
     gps_data = read_gps_data(input_path)
     output_data = []
     for image_filename in image_list:
@@ -255,6 +259,7 @@ def check_data(input_path):
     log_entry.update()
     log_data("")
     return output_data
+
 
 def upload_data(token_bearer,output_data):
     url = 'http://tanamap.drik.my.id/api/upload-data-hpt'
