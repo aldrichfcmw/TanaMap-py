@@ -45,39 +45,41 @@ def btn_predict():
     time.sleep(3)
     log_data("Checking Folder Path....")
     time.sleep(2)
-    cek_folder = check_folder(input_path)
-    time.sleep(1.5)
-    if(len(cek_folder) == 0):
+    if not check_folder(input_path):
         log_data("Stopping...")
         time.sleep(1.5)
-        log_data("Stopped!")
-    else:
-        log_data("Checking Server Status....")
-        time.sleep(2)
-        cek_server = check_server()
+        log_data("Stopped! No Image Exist")
+        return
+    time.sleep(1.5)
+    log_data("Checking Server Status....")
+    time.sleep(2)
+    if not check_server():
+        log_data("Please Chek Your Connection!")
+        return
+    log_data("Checking YoloV5...")
+    time.sleep(3)
+    check_yolo()
+    time.sleep(3)
+    log_data("Checking YoloV5 Model...")
+    time.sleep(3)
+    check_model()
+    time.sleep(3)
+    log_data("Processing Detection...")
+    time.sleep(3)
+    predict(input_path)
+    time.sleep(3)
+    log_data("Checking Data...")
+    time.sleep(3)
+    cek_data = check_data(input_path)
+    if not cek_data:
+        log_data("Stopping...")
         time.sleep(1.5)
-        if (cek_server != 200):
-            log_data("Please Chek Your Connection")
-        else:
-            log_data("Checking YoloV5...")
-            time.sleep(3)
-            check_yolo()
-            time.sleep(3)
-            log_data("Checking YoloV5 Model...")
-            time.sleep(3)
-            check_model()
-            time.sleep(3)
-            log_data("Processing Detection...")
-            time.sleep(3)
-            predict(input_path)
-            time.sleep(3)
-            log_data("Checking Data...")
-            time.sleep(3)
-            cek_data = check_data(input_path)
-            time.sleep(3)
-            log_data("Uploading Data To Server...")
-            time.sleep(3)
-            upload_data(token,cek_data)
+        log_data("Stopped! No Image Exist")
+        return
+    time.sleep(3)
+    log_data("Uploading Data To Server...")
+    time.sleep(3)
+    upload_data(token,cek_data)
 
 
 def log_data(logdata):
@@ -89,38 +91,40 @@ def check_folder(folder_path):
     image_files = [file for file in os.listdir(folder_path) if file.endswith(('.jpg', '.png','.JPG', '.PNG'))]
     if image_files:
         log_data(f"Found {len(image_files)} files JPG/PNG in {folder_path}")
+        return True
     else:
         log_data(f"Not Found file JPG/PNG in {folder_path}!")
-    return image_files
+        return False
     
 
 def check_server():
-    global status_text
+    global status_code
     
     url = "https://tanamap.drik.my.id"  # Ganti dengan URL server yang ingin diperiksa
     try:
         response = requests.get(url)
         status_code = response.status_code
-        status_text = str(response.status_code)
-        canvas.itemconfig(status_entry, text=status_text)
+        canvas.itemconfig(status_entry, text=status_code)
         if status_code == 200:
             canvas.itemconfig(image_6, state="hidden")
             canvas.itemconfig(image_5, state="normal")  # Menampilkan gambar 5
             canvas.itemconfig(image_4, state="hidden")  # Sembunyikan gambar 4
             log_data(f"Server {url} is up and running")
+            return True
         else:
+            canvas.itemconfig(status_entry, text=status_code)
             canvas.itemconfig(image_6, state="hidden")
             canvas.itemconfig(image_4, state="normal")  # Menampilkan gambar 4
             canvas.itemconfig(image_5, state="hidden")  # Sembunyikan gambar 5
             log_data(f"Server {url} is down. Status code: {response.status_code}")
+            return False
     except requests.ConnectionError:
-        canvas.itemconfig(status_entry, text=status_text)
+        canvas.itemconfig(status_entry, text="?")
         canvas.itemconfig(image_6, state="hidden")
         canvas.itemconfig(image_4, state="normal")  # Menampilkan gambar 4
         canvas.itemconfig(image_5, state="hidden")  # Sembunyikan gambar 5
         log_data("Failed to connect to the server")
-    
-    return response.status_code
+        return False
 
 def check_yolo():
     directory_path = os.path.dirname(__file__)
@@ -152,9 +156,9 @@ def check_model():
     directory_path = os.path.dirname(__file__)
     destination_directory = os.path.join(directory_path,"yolov5", "runs", "models")
     if os.path.exists(destination_directory):
-        log_data(f"Model directory is exist")
+        log_data("Model directory is exist")
     else:
-        log_data(f"Model directory is doesn't exist!")
+        log_data("Model directory is doesn't exist!")
         os.makedirs(destination_directory, exist_ok=True)
 
     save_path = os.path.join(destination_directory, 'best.pt')
