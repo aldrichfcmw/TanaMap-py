@@ -17,5 +17,5 @@ torchvision>=0.9.0
 tqdm>=4.64.0
 ultralytics>=8.0.232
 dill>=0.3.8
-request>=2.31.0
+requests>=2.31.0
 exifread>=3.0.0
