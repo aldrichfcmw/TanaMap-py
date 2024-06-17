@@ -8,13 +8,12 @@ from pathlib import Path
 # from tkinter import *
 # Explicit imports to satisfy Flake8
 from tkinter import Tk, Canvas, Entry, Text, Button, PhotoImage, filedialog,END
-import os
+from xml.etree import ElementTree as ET
+import os, time, json, importlib
 import  tkinter as tk
-import requests
-import time
-import exifread
-import json
-# import threading
+from osgeo import gdal
+import requests,cv2
+import numpy as np
 
 OUTPUT_PATH = Path(__file__).parent
 ASSETS_PATH = OUTPUT_PATH / Path("assets/")
@@ -22,68 +21,47 @@ ASSETS_PATH = OUTPUT_PATH / Path("assets/")
 def relative_to_assets(path: str) -> Path:
     return ASSETS_PATH / Path(path)
 
-
-def select_path():
-    global input_path
-    filetypes = [
-        ("JPG files", "*.jpg"),
-        ("KML files", "*.kml"),
-    ]
-    jpg_file = filedialog.askopenfilename(title="Select JPG file", filetypes=[("JPG files", "*.jpg")])
-    if jpg_file:
-        log_message(f"Selected JPG file: {jpg_file}")
-    
-    kml_file = filedialog.askopenfilename(title="Select KML file", filetypes=[("KML files", "*.kml")])
-    if kml_file:
-        log_message(f"Selected KML file: {kml_file}")
-
-    input_path = os.path.dirname(jpg_file)
-
-    # input_path = tk.filedialog.askdirectory()
-    path_entry.delete(0, tk.END)
-    path_entry.insert(0, input_path)
-
 def btn_predict():
     input_path = path_entry.get()
     input_path = input_path.strip()
     token = token_entry.get()
-    if not input_path:
-        tk.messagebox.showerror(
-            title="Invalid Path!", message="Enter a valid output path.")
-        return
-    if not token:
-        tk.messagebox.showerror(
-            title="Empty Fields!", message="Please enter Token.")
-        return
+    # if not input_path:
+    #     tk.messagebox.showerror(
+    #         title="Invalid Path!", message="Enter a valid output path.")
+    #     return
+    # if not token:
+    #     tk.messagebox.showerror(
+    #         title="Empty Fields!", message="Please enter Token.")
+    #     return
     log_message("Initializing...")
     #time.sleep(3)
-    # log_message("Checking Folder Path....")
-    #time.sleep(2)
-    # if not check_folder(input_path):
-    #     log_message("Stopping...")
-    #     #time.sleep(1.5)
-    #     log_message("Stopped! No Image Exist")
-    #     return
-    #time.sleep(1.5)
+    log_message("Checking Requirements")
+    #time.sleep(3)
+    check_requirements()
+    #time.sleep(3)
     log_message("Checking Server Status....")
     #time.sleep(2)
-    if not check_server():
+    server =  check_server()
+    if not server:
         log_message("Please Chek Your Connection!")
-        return
+    #time.sleep(2)
     # log_message("Checking YoloV5...")
     #time.sleep(3)
     # check_yolo()
     #time.sleep(3)
-    log_message("Checking YoloV5 Model...")
+    # log_message("Checking YoloV5 Model...")
     #time.sleep(3)
-    check_model()
+    # check_model()
     #time.sleep(3)
     # log_message("Processing Detection...")
     #time.sleep(3)
-    # predict(input_path)
+    # predict(jpg_file)
     #time.sleep(3)
     # log_message("Checking Data...")
     #time.sleep(3)
+    get_latest_folder()
+    process_crop_images()
+    save_results_to_json()
     # cek_data = check_data(input_path)
     # if not cek_data:
         # log_message("Stopping...")
@@ -94,7 +72,6 @@ def btn_predict():
     #time.sleep(3)
     # upload_data(token,cek_data)
 
-
 def log_message(message, newline=True):
     # log_entry.config(state=tk.NORMAL)
     log_entry.insert(tk.END, message + ('\n' if newline else ''))
@@ -103,57 +80,6 @@ def log_message(message, newline=True):
     log_entry.see(tk.END)
     log_entry.update()
 
-def check_folder(folder_path):
-    image_files = [file for file in os.listdir(folder_path) if file.endswith(('.jpg', '.png','.JPG', '.PNG'))]
-    if image_files:
-        log_message(f"Found {len(image_files)} files JPG/PNG in {folder_path}")
-        return True
-    else:
-        log_message(f"Not Found file JPG/PNG in {folder_path}!")
-        return False
-
-def check_server():
-    global status_code, url
-    
-    url = "https://tanamap.drik.my.id"  # Ganti dengan URL server yang ingin diperiksa
-    try:
-        response = requests.get(url)
-        status_code = response.status_code
-        canvas.itemconfig(status_entry, text=status_code)
-        if status_code == 200:
-            canvas.itemconfig(image_6, state="hidden")
-            canvas.itemconfig(image_5, state="normal")  # Menampilkan gambar 5
-            canvas.itemconfig(image_4, state="hidden")  # Sembunyikan gambar 4
-            log_message(f"Server {url} is up and running")
-            return True
-        else:
-            canvas.itemconfig(status_entry, text=status_code)
-            canvas.itemconfig(image_6, state="hidden")
-            canvas.itemconfig(image_4, state="normal")  # Menampilkan gambar 4
-            canvas.itemconfig(image_5, state="hidden")  # Sembunyikan gambar 5
-            log_message(f"Server {url} is down. Status code: {response.status_code}")
-            return False
-    except requests.ConnectionError:
-        canvas.itemconfig(status_entry, text="?")
-        canvas.itemconfig(image_6, state="hidden")
-        canvas.itemconfig(image_4, state="normal")  # Menampilkan gambar 4
-        canvas.itemconfig(image_5, state="hidden")  # Sembunyikan gambar 5
-        log_message("Failed to connect to the server")
-        return False
-
-def check_yolo():
-    directory_path = os.path.dirname(__file__)
-    folder_name = os.path.join(directory_path,"yolov5")
-    if os.path.exists(folder_name):
-        log_message(f"Yolov5 is exists, Updating...")
-        command = ["git", "pull"]
-    else:
-        log_message(f"Yolov5 doesn't exist!")
-        log_message(f"Downloading yolov5....")
-        command = ["git", "clone", "https://github.com/ultralytics/yolov5.git"]
-        sub_command(command,directory_path)
-    log_message("Yolov5 berhasil diupdate")
-    
 def sub_command(command,directory_path):
     import subprocess
     log_entry.insert(tk.END, command)
@@ -167,30 +93,123 @@ def sub_command(command,directory_path):
             log_message(output.strip())
             # print(output.strip())
 
-def check_model():
-    directory_path = os.path.dirname(__file__)
-    destination_directory = os.path.join(directory_path, "yolov5", "runs", "models")
+def install_package(package):
+    command = ["pip","install",package]
+    sub_command(command,OUTPUT_PATH)
+
+def import_package(package):
+    globals()[package] = __import__(package)
+
+def select_path():
+    global input_path, jpg_file, kml_file
+    filetypes = [
+        ("JPG files", "*.jpg"),
+        ("KML files", "*.kml"),
+    ]
+    jpg_file = filedialog.askopenfilename(title="Select JPG file", filetypes=[("JPG files", "*.jpg")])
+    if jpg_file:
+        log_message(f"Selected JPG file: {jpg_file}")
     
+    input_path = os.path.dirname(jpg_file)
+    path_entry.delete(0, tk.END)
+    path_entry.insert(0, input_path)
+
+    kml_file = filedialog.askopenfilename(title="Select KML file", filetypes=[("KML files", "*.kml")])
+    if kml_file:
+        log_message(f"Selected KML file: {kml_file}")   
+
+def check_requirements():
+    require_package = ['requests','cv2','numpy','osgeo','dill']
+    for package in require_package:
+        if package == 'osgeo':
+            try:
+                importlib.import_module(package)
+            except ImportError:
+                log_message(f"{package} is not installed.")
+                install_package("https://github.com/cgohlke/geospatial-wheels/releases/download/v2024.2.18/GDAL-3.8.4-cp310-cp310-win_amd64.whl")
+        else:
+            try:
+                import_package(package)
+            except ImportError :
+                log_message(f"{package} is not installed.")
+                log_message(f"Installing package {package}...")
+                install_package(package)
+    import requests,cv2
+    import numpy as np
+    import osgeo.gdal as gdal
+    log_message("All requirement alredy installed.") 
+
+def check_server():
+    global status_code, url
+    
+    url = "https://tanamap.drik.my.id" 
+    try:
+        response = requests.get(url)
+        status_code = response.status_code
+        canvas.itemconfig(status_entry, text=status_code)
+        if status_code == 200:
+            canvas.itemconfig(image_6, state="hidden")
+            canvas.itemconfig(image_5, state="normal")
+            canvas.itemconfig(image_4, state="hidden")
+            log_message(f"Server {url} is up and running")
+            return True
+        else:
+            canvas.itemconfig(status_entry, text=status_code)
+            canvas.itemconfig(image_6, state="hidden")
+            canvas.itemconfig(image_4, state="normal")
+            canvas.itemconfig(image_5, state="hidden")
+            log_message(f"Server {url} is error. Status code: {response.status_code}")
+            return False
+    except requests.ConnectionError:
+        canvas.itemconfig(status_entry, text="?")
+        canvas.itemconfig(image_6, state="hidden")
+        canvas.itemconfig(image_4, state="normal")
+        canvas.itemconfig(image_5, state="hidden")
+        log_message("Failed to connect to the server")
+        return False
+
+def check_yolo():
+    global yolo_path
+    yolo_path = os.path.join(OUTPUT_PATH,"yolov5")
+    if os.path.exists(yolo_path):
+        log_message("Yolov5 is exists, Updating...")
+        command = ["git", "pull"]
+        log_message("Already up to date.")
+    else:
+        log_message("Yolov5 doesn't exist!")
+        log_message("Downloading Yolov5....")
+        command = ["git", "clone", "https://github.com/ultralytics/yolov5.git"]
+        sub_command(command,OUTPUT_PATH)
+        log_message("Yolov5 Updated.")
+    log_message("Installing requirements...")
+    command = ["pip","install","-r","requirements.txt"]
+    sub_command(command, yolo_path)
+    log_message("All Required alredy installed.")
+
+def check_model():
+    destination_directory = os.path.join(yolo_path, "runs", "models")
+    log_message("Checking Model...")
+    time.sleep(2)
     if os.path.exists(destination_directory):
         log_message("Model directory exists")
     else:
         log_message("Model directory doesn't exist! Creating...")
         os.makedirs(destination_directory, exist_ok=True)
 
-    save_path = os.path.join(destination_directory, 'best.pt')
+    model_path = os.path.join(destination_directory, 'best.pt')
     
-    if os.path.exists(save_path):
+    if os.path.exists(model_path):
         log_message("Model file exists")
     else:
         log_message("Model file doesn't exist. Downloading...")
-        url = "http://tanamap.drik.my.id/model/best.pt"  # Ganti dengan URL yang sesuai
-        download_model(url,save_path)
-        # threading.Thread(target=download_model, args=(url, save_path)).start()
+        url = "http://tanamap.drik.my.id/model/best.pt"
+        download_file(url,model_path)
+        log_message("Successfully downloaded model")
 
-def download_model(url, save_path):
+def download_file(url, save_path):
     response = requests.get(url, stream=True)
     total_size = int(response.headers.get('content-length', 0))
-    chunk_size = 1024  # Ukuran chunk yang ingin Anda gunakan
+    chunk_size = 1024 
 
     with open(save_path, 'wb') as file:
         downloaded = 0
@@ -208,12 +227,12 @@ def download_model(url, save_path):
                 log_entry.update()
             # if(percent_done)
             # log_entry.insert(tk.END, "#")
-        log_message("]", newline=False)
-    log_message("\nFile successfully downloaded")
+        log_message("]  100%", newline=False)
+    # log_message("\nFile successfully downloaded")
 
 def predict(input_path):
-    directory_path = os.path.dirname(__file__)
-    folder_name = os.path.join(directory_path,"yolov5")
+    log_message("Starting Detection...")
+    folder_name = os.path.join(OUTPUT_PATH,"yolov5")
     command =[
         "python",
         "segment/predict.py",
@@ -221,70 +240,162 @@ def predict(input_path):
         "--line-thickness", "0",
         "--weights", "runs/models/best.pt",
         "--img", "640",
-        "--conf-thres", "0.25",
-        "--source", input_path
+        "--conf-thres", "0.5",
+        "--source", input_path, 
+        "--save-crop"
     ]
     sub_command(command,folder_name)
-    log_message("Detection Complete")
+    log_message("Detection Complete.")
 
-def dms_to_decimal(dms):
-    return dms[0].num / dms[0].den + dms[1].num / (dms[1].den * 60) + dms[2].num / (dms[2].den * 3600)
+def get_latest_folder():
+    parent_folder = os.path.join(OUTPUT_PATH, "yolov5", "runs","predict-seg" ) 
+    folders = [os.path.join(parent_folder,folder ) for folder in os.listdir(parent_folder) if os.path.isdir(os.path.join(parent_folder, folder))]
+    global latest_folder 
+    latest_folder = max(folders, key=os.path.getmtime)
+    log_message(latest_folder)
 
-def read_gps_data(folder):
-    gps_data = {}
-    for filename in os.listdir(folder):
-        if filename.endswith(('.jpg', '.png','.JPG', '.PNG')):
-            with open(os.path.join(folder, filename), 'rb') as file:
-                tags = exifread.process_file(file)
-                if 'GPS GPSLatitude' in tags and 'GPS GPSLongitude' in tags:
-                    lat_ref = str(tags['GPS GPSLatitudeRef'])
-                    lon_ref = str(tags['GPS GPSLongitudeRef'])
-                    lat = dms_to_decimal(tags['GPS GPSLatitude'].values)
-                    lon = dms_to_decimal(tags['GPS GPSLongitude'].values)
-                    if lat_ref == 'S':
-                        lat *= -1
-                    if lon_ref == 'W':
-                        lon *= -1
-                    gps_data[filename] = {
-                        'latitude': str(lat),
-                        'longitude': str(lon)
-                    }
-    return gps_data 
+# Membaca file KML
+def read_kml(kml_path):
+    tree = ET.parse(kml_path)
+    root = tree.getroot()
+    namespace = {'kml': 'http://www.opengis.net/kml/2.2'}
 
-def check_data(input_path):
-    directory_path = os.path.dirname(__file__)
-    directory_path = os.path.join(directory_path,"yolov5","runs","predict-seg")
-    folders = [folder for folder in os.listdir(directory_path) if os.path.isdir(os.path.join(directory_path, folder))]
-    folders.sort(key=lambda x: os.path.getctime(os.path.join(directory_path, x)), reverse=True)
-    latest_folder = os.path.join(directory_path, folders[0])
-    if not check_folder(latest_folder):
-        log_message("Stopping...")
-        #time.sleep(1.5)
-        log_message("Stopped! No Image Exist")
-        return
-    image_list = [file for file in os.listdir(latest_folder) if file.endswith(('.jpg', '.png','.JPG', '.PNG'))]
-    gps_data = read_gps_data(input_path)
-    output_data = []
-    for image_filename in image_list:
-        if image_filename in gps_data:
-            gps_info = gps_data[image_filename]
-            # log_message(f"Nama Gambar: {image_filename}, Latitude {gps_info['latitude']}, Longitude {gps_info['longitude']}")
-            latitude = str(gps_info['latitude'])
-            longitude = str(gps_info['longitude'])
-            output_data.append({
-                "image": image_filename,
-                "location": {
-                    "latitude": gps_info['latitude'],
-                    "longitude": gps_info['longitude']
-                }
-            })
-    # print(json.dumps(output_data, indent=4))
-    log_entry.insert(tk.END, json.dumps(output_data, indent=4))
+    north = float(root.find('.//kml:LatLonBox/kml:north', namespace).text)
+    south = float(root.find('.//kml:LatLonBox/kml:south', namespace).text)
+    east = float(root.find('.//kml:LatLonBox/kml:east', namespace).text)
+    west = float(root.find('.//kml:LatLonBox/kml:west', namespace).text)
+
+    return north, south, east, west
+
+# Mendapatkan ukuran gambar orthomosaic
+def get_image_size(image_path):
+    dataset = gdal.Open(image_path)
+    width = dataset.RasterXSize
+    height = dataset.RasterYSize
+    return width, height
+
+# Hitung geo-transform dari informasi KML
+def calculate_geo_transform(north, south, east, west, image_width, image_height):
+    pixel_width = (east - west) / image_width
+    pixel_height = (north - south) / image_height
+    return (west, pixel_width, 0, north, 0, -pixel_height)
+
+# Fungsi untuk mengonversi koordinat piksel ke koordinat geografis
+def pixel_to_geo(pixel_x, pixel_y, geo_transform):
+    geo_x = geo_transform[0] + pixel_x * geo_transform[1] + pixel_y * geo_transform[2]
+    geo_y = geo_transform[3] + pixel_x * geo_transform[4] + pixel_y * geo_transform[5]
+    return geo_y, geo_x
+
+# Fungsi untuk menemukan posisi crop dalam orthomosaic menggunakan OpenCV
+def find_crop_position(orthomosaic_path, crop_path):
+    orthomosaic = cv2.imread(orthomosaic_path)
+    crop = cv2.imread(crop_path)
+
+    result = cv2.matchTemplate(orthomosaic, crop, cv2.TM_CCOEFF_NORMED)
+    _, _, _, max_loc = cv2.minMaxLoc(result)
+
+    return max_loc
+
+# Fungsi untuk menghitung Green Leaf Index (GLI)
+def calculate_gli(image):
+    R = image[:,:,0].astype(np.float32)
+    G = image[:,:,1].astype(np.float32)
+    B = image[:,:,2].astype(np.float32)
+    gli = (2 * G - R - B / (2 * G + R + B)) + 1e-6
+    return gli
+
+# Fungsi untuk menganalisis kesehatan tanaman berdasarkan GLI
+def analyze_health(gli_image):
+    _, binary_gli = cv2.threshold(gli_image, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    healthy_area = np.sum(binary_gli == 255)
+    total_area = binary_gli.size
+    healthy_percentage = healthy_area / total_area * 100
+    return healthy_area, total_area, healthy_percentage
+
+# Fungsi utama untuk memproses gambar crop
+def process_crop_images():
+    global results_json
+    kml_path = kml_file
+    orthomosaic_path = jpg_file
+    crops_folder_path = os.path.join(latest_folder,"crops","rice-fields")
+    
+    north, south, east, west = read_kml(kml_path)
+    print("North:", north)
+    print("South:", south)
+    print("East:", east)
+    print("West:", west)
+
+    # Langkah 2: Dapatkan ukuran sebenarnya dari gambar orthomosaic
+    image_width, image_height = get_image_size(orthomosaic_path)
+    print("Ukuran gambar orthomosaic: width =", image_width, ", height =", image_height)
+
+    # Langkah 3: Hitung geo-transform dari informasi KML dan ukuran gambar
+    geo_transform = calculate_geo_transform(north, south, east, west, image_width, image_height)
+    print("GeoTransform:", geo_transform)
+
+    # Langkah 4: Proses setiap file crop dalam folder
+    crop_files = [f for f in os.listdir(crops_folder_path) if f.endswith(('.jpg', '.png'))]
+
+    results_json = []
+
+    for crop_file in crop_files:
+        crop_path = os.path.join(crops_folder_path, crop_file)
+
+        # Temukan posisi crop dalam orthomosaic
+        crop_position = find_crop_position(orthomosaic_path, crop_path)
+        print(f"Posisi crop {crop_file} dalam piksel:", crop_position)
+
+        # Konversi posisi crop ke koordinat geografis
+        crop_geo_coord = pixel_to_geo(crop_position[1], crop_position[0], geo_transform)
+        print(f"Koordinat geografis dari crop {crop_file}:", crop_geo_coord)
+
+        # Muat citra crop
+        crop_image = cv2.imread(crop_path)
+        crop_image = cv2.cvtColor(crop_image, cv2.COLOR_BGR2RGB)  # Konversi dari BGR ke RGB
+
+        # Hitung Green Leaf Index (GLI)
+        gli_image = calculate_gli(crop_image)
+        gli_image = cv2.normalize(gli_image, None, 0, 255, cv2.NORM_MINMAX)
+        gli_image = gli_image.astype(np.uint8)
+
+        # Analisis kesehatan tanaman berdasarkan GLI
+        healthy_area, total_area, healthy_percentage = analyze_health(gli_image)
+        print(f"Area Tanaman Sehat: {healthy_area} pixels")
+        print(f"Total Area: {total_area} pixels")
+        print(f"Persentase Area Tanaman Sehat: {healthy_percentage:.2f}%")
+
+        health_status = ""
+        if healthy_percentage > 75:
+            health_status = "Kebanyakan tanaman dalam kondisi sehat."
+        elif healthy_percentage > 50:
+            health_status = "Banyak tanaman dalam kondisi sehat, namun ada beberapa area yang perlu diperhatikan."
+        else:
+            health_status = "Kebanyakan tanaman dalam kondisi tidak sehat. Perlu dilakukan tindakan lebih lanjut."
+
+        # Buat link untuk membuka koordinat di Google Maps
+        google_maps_link = f"https://www.google.com/maps?q={crop_geo_coord[0]},{crop_geo_coord[1]}"
+        print(f"Link Google Maps {crop_file}:", google_maps_link)
+
+        results_json.append({
+            "crop_file": crop_file,
+            "pixel_position": [int(crop_position[0]), int(crop_position[1])],  # Convert to Python int
+            "geo_coordinates": [float(crop_geo_coord[0]), float(crop_geo_coord[1])],  # Convert to Python float
+            "google_maps_link": google_maps_link,
+            "healthy_area": int(healthy_area),  # Convert to Python int
+            "total_area": int(total_area),  # Convert to Python int
+            "healthy_percentage": float(healthy_percentage),  # Convert to Python float
+            "health_status": health_status
+        })
+    log_entry.insert(tk.END, json.dumps(results_json, indent=4))
     log_entry.see(tk.END)
     log_entry.update()
-    log_message("")
-    return output_data
 
+# Fungsi untuk menyimpan hasil ke file JSON
+def save_results_to_json():
+    json_path = os.path.join(latest_folder,"results.json")
+    with open(json_path, 'w') as f:
+        json.dump(results_json, f, indent=4)
+    print(f"Hasil telah disimpan di {json_path}")
 
 def upload_data(token_bearer,output_data):
     url = 'http://tanamap.drik.my.id/api/upload-data-hpt'
