@@ -35,29 +35,25 @@ def btn_predict():
     #     return
     log_message("Initializing...")
     #time.sleep(3)
-    log_message("Checking Requirements")
-    #time.sleep(3)
-    check_requirements()
-    #time.sleep(3)
     log_message("Checking Server Status....")
     #time.sleep(2)
     server =  check_server()
     if not server:
         log_message("Please Chek Your Connection!")
     #time.sleep(2)
-    # log_message("Checking YoloV5...")
+    log_message("Checking YoloV5...")
     #time.sleep(3)
-    # check_yolo()
+    check_yolo()
     #time.sleep(3)
-    # log_message("Checking YoloV5 Model...")
+    log_message("Checking YoloV5 Model...")
     #time.sleep(3)
-    # check_model()
+    check_model()
     #time.sleep(3)
-    # log_message("Processing Detection...")
+    log_message("Processing Detection...")
     #time.sleep(3)
-    # predict(jpg_file)
+    predict(jpg_file)
     #time.sleep(3)
-    # log_message("Checking Data...")
+    log_message("Checking Data...")
     #time.sleep(3)
     get_latest_folder()
     process_crop_images()
@@ -93,13 +89,6 @@ def sub_command(command,directory_path):
             log_message(output.strip())
             # print(output.strip())
 
-def install_package(package):
-    command = ["pip","install",package]
-    sub_command(command,OUTPUT_PATH)
-
-def import_package(package):
-    globals()[package] = __import__(package)
-
 def select_path():
     global input_path, jpg_file, kml_file
     filetypes = [
@@ -118,26 +107,6 @@ def select_path():
     if kml_file:
         log_message(f"Selected KML file: {kml_file}")   
 
-def check_requirements():
-    require_package = ['requests','cv2','numpy','osgeo','dill']
-    for package in require_package:
-        if package == 'osgeo':
-            try:
-                importlib.import_module(package)
-            except ImportError:
-                log_message(f"{package} is not installed.")
-                install_package("https://github.com/cgohlke/geospatial-wheels/releases/download/v2024.2.18/GDAL-3.8.4-cp310-cp310-win_amd64.whl")
-        else:
-            try:
-                import_package(package)
-            except ImportError :
-                log_message(f"{package} is not installed.")
-                log_message(f"Installing package {package}...")
-                install_package(package)
-    import requests,cv2
-    import numpy as np
-    import osgeo.gdal as gdal
-    log_message("All requirement alredy installed.") 
 
 def check_server():
     global status_code, url
@@ -204,7 +173,7 @@ def check_model():
         log_message("Model file doesn't exist. Downloading...")
         url = "http://tanamap.drik.my.id/model/best.pt"
         download_file(url,model_path)
-        log_message("Successfully downloaded model")
+        log_message("\nSuccessfully downloaded model")
 
 def download_file(url, save_path):
     response = requests.get(url, stream=True)
