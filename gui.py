@@ -12,7 +12,7 @@ from xml.etree import ElementTree as ET
 import os, time, json, importlib
 import  tkinter as tk
 from osgeo import gdal
-import requests,cv2
+import requests,cv2, base64
 import numpy as np
 
 OUTPUT_PATH = Path(__file__).parent
@@ -25,14 +25,14 @@ def btn_predict():
     input_path = path_entry.get()
     input_path = input_path.strip()
     token = token_entry.get()
-    # if not input_path:
-    #     tk.messagebox.showerror(
-    #         title="Invalid Path!", message="Enter a valid output path.")
-    #     return
-    # if not token:
-    #     tk.messagebox.showerror(
-    #         title="Empty Fields!", message="Please enter Token.")
-    #     return
+    if not input_path:
+        tk.messagebox.showerror(
+            title="Invalid Path!", message="Enter a valid output path.")
+        return
+    if not token:
+        tk.messagebox.showerror(
+            title="Empty Fields!", message="Please enter Token.")
+        return
     log_message("Initializing...")
     #time.sleep(3)
     log_message("Checking Server Status....")
@@ -56,8 +56,16 @@ def btn_predict():
     log_message("Checking Data...")
     #time.sleep(3)
     get_latest_folder()
+    #time.sleep(3)
+    log_message("Processing Image...")
+    #time.sleep(3)
     process_crop_images()
+    #time.sleep(3)
+    log_message("Saving JSON...")
+    #time.sleep(3)
     save_results_to_json()
+    #time.sleep(3)
+    upload_data(token)
     # cek_data = check_data(input_path)
     # if not cek_data:
         # log_message("Stopping...")
@@ -197,7 +205,7 @@ def download_file(url, save_path):
             # if(percent_done)
             # log_entry.insert(tk.END, "#")
         log_message("]  100%", newline=False)
-    # log_message("\nFile successfully downloaded")
+    log_message("\nSuccessfully downloaded")
 
 def predict(input_path):
     log_message("Starting Detection...")
@@ -281,6 +289,11 @@ def analyze_health(gli_image):
     healthy_percentage = healthy_area / total_area * 100
     return healthy_area, total_area, healthy_percentage
 
+def image_to_base64(image_path):
+    with open(image_path, "rb") as image_file:
+        encoded_string = base64.b64encode(image_file.read()).decode('utf-8')
+    return encoded_string
+
 # Fungsi utama untuk memproses gambar crop
 def process_crop_images():
     global results_json
@@ -289,18 +302,21 @@ def process_crop_images():
     crops_folder_path = os.path.join(latest_folder,"crops","rice-fields")
     
     north, south, east, west = read_kml(kml_path)
-    print("North:", north)
-    print("South:", south)
-    print("East:", east)
-    print("West:", west)
+    # print("North:", north)
+    # print("South:", south)
+    # print("East:", east)
+    # print("West:", west)
+    log_message(f"North: {north}, South: {south},\nEast: {east}, West: {west}")
 
     # Langkah 2: Dapatkan ukuran sebenarnya dari gambar orthomosaic
     image_width, image_height = get_image_size(orthomosaic_path)
-    print("Ukuran gambar orthomosaic: width =", image_width, ", height =", image_height)
+    # print("Ukuran gambar orthomosaic: width =", image_width, ", height =", image_height)
+    log_message(f"Ukuran gambar orthomosaic: width={image_width}, height={image_height}")
 
     # Langkah 3: Hitung geo-transform dari informasi KML dan ukuran gambar
     geo_transform = calculate_geo_transform(north, south, east, west, image_width, image_height)
-    print("GeoTransform:", geo_transform)
+    # print("GeoTransform:", geo_transform)
+    log_message(f"GeoTransform: {geo_transform}")
 
     # Langkah 4: Proses setiap file crop dalam folder
     crop_files = [f for f in os.listdir(crops_folder_path) if f.endswith(('.jpg', '.png'))]
@@ -312,11 +328,13 @@ def process_crop_images():
 
         # Temukan posisi crop dalam orthomosaic
         crop_position = find_crop_position(orthomosaic_path, crop_path)
-        print(f"Posisi crop {crop_file} dalam piksel:", crop_position)
+        # print(f"Posisi crop {crop_file} dalam piksel:", crop_position)
+        log_message(f"\nPosisi crop {crop_file} dalam piksel: {crop_position}" )
 
         # Konversi posisi crop ke koordinat geografis
         crop_geo_coord = pixel_to_geo(crop_position[1], crop_position[0], geo_transform)
-        print(f"Koordinat geografis dari crop {crop_file}:", crop_geo_coord)
+        # print(f"Koordinat geografis dari crop {crop_file}:", crop_geo_coord)
+        log_message(f"Koordinat geografis dari crop {crop_file}: {crop_geo_coord}")
 
         # Muat citra crop
         crop_image = cv2.imread(crop_path)
@@ -329,31 +347,42 @@ def process_crop_images():
 
         # Analisis kesehatan tanaman berdasarkan GLI
         healthy_area, total_area, healthy_percentage = analyze_health(gli_image)
-        print(f"Area Tanaman Sehat: {healthy_area} pixels")
-        print(f"Total Area: {total_area} pixels")
-        print(f"Persentase Area Tanaman Sehat: {healthy_percentage:.2f}%")
+        # print(f"Area Tanaman Sehat: {healthy_area} pixels")
+        # print(f"Total Area: {total_area} pixels")
+        # print(f"Persentase Area Tanaman Sehat: {healthy_percentage:.2f}%")
+
+        log_message(f"Area Tanaman Sehat: {healthy_area} pixels")
+        log_message(f"Total Area: {total_area} pixels")
+        log_message(f"Persentase Area Tanaman Sehat: {healthy_percentage:.2f}%")
 
         health_status = ""
         if healthy_percentage > 75:
+            health_statusInt = 0
             health_status = "Kebanyakan tanaman dalam kondisi sehat."
         elif healthy_percentage > 50:
+            health_statusInt = 1
             health_status = "Banyak tanaman dalam kondisi sehat, namun ada beberapa area yang perlu diperhatikan."
         else:
+            health_statusInt = 2
             health_status = "Kebanyakan tanaman dalam kondisi tidak sehat. Perlu dilakukan tindakan lebih lanjut."
+        log_message(f"Health Status:{health_status}")
 
         # Buat link untuk membuka koordinat di Google Maps
         google_maps_link = f"https://www.google.com/maps?q={crop_geo_coord[0]},{crop_geo_coord[1]}"
-        print(f"Link Google Maps {crop_file}:", google_maps_link)
-
+        # print(f"Link Google Maps {crop_file}:", google_maps_link)
+        
         results_json.append({
             "crop_file": crop_file,
-            "pixel_position": [int(crop_position[0]), int(crop_position[1])],  # Convert to Python int
-            "geo_coordinates": [float(crop_geo_coord[0]), float(crop_geo_coord[1])],  # Convert to Python float
-            "google_maps_link": google_maps_link,
+            # "pixel_position": [int(crop_position[0]), int(crop_position[1])],  # Convert to Python int
+            "latitude":float(crop_geo_coord[0]),
+            "longitude":float(crop_geo_coord[1]),
+            # "geo_coordinates": [float(crop_geo_coord[0]), float(crop_geo_coord[1])],  # Convert to Python float
+            # "google_maps_link": google_maps_link,
             "healthy_area": int(healthy_area),  # Convert to Python int
             "total_area": int(total_area),  # Convert to Python int
             "healthy_percentage": float(healthy_percentage),  # Convert to Python float
-            "health_status": health_status
+            "health_status": health_statusInt,
+            "status": health_status
         })
     log_entry.insert(tk.END, json.dumps(results_json, indent=4))
     log_entry.see(tk.END)
@@ -364,20 +393,40 @@ def save_results_to_json():
     json_path = os.path.join(latest_folder,"results.json")
     with open(json_path, 'w') as f:
         json.dump(results_json, f, indent=4)
-    print(f"Hasil telah disimpan di {json_path}")
+    # print(f"Hasil telah disimpan di {json_path}")
+    log_message(f"Hasil telah disimpan di {json_path}")
 
-def upload_data(token_bearer,output_data):
-    url = 'http://tanamap.drik.my.id/api/upload-data-hpt'
+def upload_data(token_bearer):
+    url = 'http://127.0.0.1:8000/api/disease-data'
 
-    headers = {'Authorization': f'Bearer {token_bearer}', 'Content-Type': 'application/json'}
+    headers = {'Authorization': f'Bearer {token_bearer}'}
 
-    response = requests.post(url, json=output_data, headers=headers)
+    # response = requests.post(url, json=output_data, headers=headers)
 
-    if response.status_code == 200:
-        log_message("Data is successfully sent to the server")
-    else:
-        log_message(f"Failed to send data to the server. Status code:{response.status_code}" )
-    return response.status_code
+    # Untuk setiap data, kirim gambar dalam format base64
+    for item in results_json:
+        file_path = os.path.join(latest_folder,'crops','rice-fields', item['crop_file'])
+        files = {
+            'crop_image': open(file_path, 'rb')
+        }
+        payload = {
+            "latitude": item['latitude'],
+            "longitude": item['longitude'],
+            "healthy_area": item['healthy_area'],
+            "total_area": item['total_area'],
+            "healthy_percentage": item['healthy_percentage'],
+            "health_status": item['health_status'],
+        }
+        
+        response = requests.post(url, headers=headers, files=files, data=payload)
+        if response.status_code == 200:
+            # print('Data stored successfully:', response.json())
+            log_message(f'Data stored successfully:{response.json()}')
+        else:
+            # print('Failed to store data:', response.text) 
+            log_message(f'Failed to store data:{response.json()}')
+        with open('test.txt', 'w', encoding='utf-8') as f:
+            f.write(response.text)
 
 window = Tk()
 window.title("Tanamap")
