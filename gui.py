@@ -1,11 +1,14 @@
 from pathlib import Path
 from tkinter import Tk, Canvas, Entry, Text, Button, PhotoImage, filedialog,END
-from xml.etree import ElementTree as ET
-import os, time, json, importlib
 import  tkinter as tk
-from osgeo import gdal
-import requests,cv2, base64
+
+import os, time, json, requests, cv2
 import numpy as np
+import matplotlib.image as mpimg
+import matplotlib.pyplot as plt
+from osgeo import gdal
+from skimage import io
+from xml.etree import ElementTree as ET
 
 OUTPUT_PATH = Path(__file__).parent
 ASSETS_PATH = OUTPUT_PATH / Path("assets/")
@@ -17,14 +20,14 @@ def btn_predict():
     input_path = path_entry.get()
     input_path = input_path.strip()
     token = token_entry.get()
-    if not input_path:
-        tk.messagebox.showerror(
-            title="Invalid Path!", message="Enter a valid output path.")
-        return
-    if not token:
-        tk.messagebox.showerror(
-            title="Empty Fields!", message="Please enter Token.")
-        return
+    # if not input_path:
+    #     tk.messagebox.showerror(
+    #         title="Invalid Path!", message="Enter a valid output path.")
+    #     return
+    # if not token:
+    #     tk.messagebox.showerror(
+    #         title="Empty Fields!", message="Please enter Token.")
+    #     return
     log_message("Initializing...")
     #time.sleep(3)
     log_message("Checking Server Status....")
@@ -57,7 +60,7 @@ def btn_predict():
     #time.sleep(3)
     save_results_to_json()
     #time.sleep(3)
-    upload_data(token)
+    # upload_data(token)
     # cek_data = check_data(input_path)
     # if not cek_data:
         # log_message("Stopping...")
@@ -267,24 +270,19 @@ def find_crop_position(orthomosaic_path, crop_path):
 
 # Fungsi untuk menghitung Green Leaf Index (GLI)
 def calculate_gli(image):
-    R = image[:,:,0].astype(np.float32)
-    G = image[:,:,1].astype(np.float32)
-    B = image[:,:,2].astype(np.float32)
-    gli = (2 * G - R - B / (2 * G + R + B)) + 1e-6
+    R = image[:,:,0]
+    G = image[:,:,1]
+    B = image[:,:,2]
+    gli = (2 * G - R - B / 2 * G + R + B)+1e-6
     return gli
 
 # Fungsi untuk menganalisis kesehatan tanaman berdasarkan GLI
 def analyze_health(gli_image):
-    _, binary_gli = cv2.threshold(gli_image, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-    healthy_area = np.sum(binary_gli == 255)
-    total_area = binary_gli.size
-    healthy_percentage = healthy_area / total_area * 100
-    return healthy_area, total_area, healthy_percentage
-
-def image_to_base64(image_path):
-    with open(image_path, "rb") as image_file:
-        encoded_string = base64.b64encode(image_file.read()).decode('utf-8')
-    return encoded_string
+    gli_in_range = (gli_image >= -20000) & (gli_image <= -4000)
+    unhealthy_area = np.sum(gli_in_range)
+    total_area = gli_image.size
+    unhealthy_percentage = unhealthy_area / total_area * 100
+    return unhealthy_area, total_area, unhealthy_percentage
 
 # Fungsi utama untuk memproses gambar crop
 def process_crop_images():
@@ -292,7 +290,9 @@ def process_crop_images():
     kml_path = kml_file
     orthomosaic_path = jpg_file
     crops_folder_path = os.path.join(latest_folder,"crops","rice-fields")
-    
+    save_path = os.path.join(latest_folder,"crops","rice-fields-gli")
+    os.makedirs(save_path, exist_ok=True)
+
     north, south, east, west = read_kml(kml_path)
     # print("North:", north)
     # print("South:", south)
@@ -329,50 +329,59 @@ def process_crop_images():
         log_message(f"Koordinat geografis dari crop {crop_file}: {crop_geo_coord}")
 
         # Muat citra crop
-        crop_image = cv2.imread(crop_path)
-        crop_image = cv2.cvtColor(crop_image, cv2.COLOR_BGR2RGB)  # Konversi dari BGR ke RGB
+        crop_image = io.imread(crop_path) # Konversi dari BGR ke RGB
+
+        R = crop_image[:,:,0]
+        G = crop_image[:,:,1]
+        B = crop_image[:,:,2]
 
         # Hitung Green Leaf Index (GLI)
+        # gli_image = (2 * G - R - B / 2 * G + R + B)+1e-6
         gli_image = calculate_gli(crop_image)
-        gli_image = cv2.normalize(gli_image, None, 0, 255, cv2.NORM_MINMAX)
-        gli_image = gli_image.astype(np.uint8)
+        # print(gli_image)
+        gli_in_range = (gli_image >= -20000) & (gli_image <= -4000)
+        reverse_colormap = plt.cm.RdYlGn.reversed()
+        plt.figure(figsize=(5,5))
+        plt.imshow(gli_in_range, cmap=reverse_colormap)
+        plt.axis('off')
+        save_file = os.path.join(save_path, os.path.splitext(crop_file)[0] + ".png")
+        plt.savefig(save_file)
+        plt.close()
+        gli_file = os.path.splitext(crop_file)[0] + ".png"
 
         # Analisis kesehatan tanaman berdasarkan GLI
-        healthy_area, total_area, healthy_percentage = analyze_health(gli_image)
-        # print(f"Area Tanaman Sehat: {healthy_area} pixels")
-        # print(f"Total Area: {total_area} pixels")
-        # print(f"Persentase Area Tanaman Sehat: {healthy_percentage:.2f}%")
-
-        log_message(f"Area Tanaman Sehat: {healthy_area} pixels")
+        unhealthy_area, total_area, unhealthy_percentage = analyze_health(gli_image)
+        log_message(f"Area Tanaman Tidak Sehat: {unhealthy_area} pixels")
         log_message(f"Total Area: {total_area} pixels")
-        log_message(f"Persentase Area Tanaman Sehat: {healthy_percentage:.2f}%")
+        log_message(f"Persentase Area Tanaman Tidak Sehat: {unhealthy_percentage:.2f}%")
+
+        # log_message(f"Area Tanaman Sehat: {healthy_area} pixels")
+        # log_message(f"Total Area: {total_area} pixels")
+        # log_message(f"Persentase Area Tanaman Sehat: {healthy_percentage:.2f}%")
 
         health_status = ""
-        if healthy_percentage > 75:
+        if unhealthy_percentage  < 25:
             health_statusInt = 0
             health_status = "Kebanyakan tanaman dalam kondisi sehat."
-        elif healthy_percentage > 50:
+        else:
             health_statusInt = 1
             health_status = "Banyak tanaman dalam kondisi sehat, namun ada beberapa area yang perlu diperhatikan."
-        else:
-            health_statusInt = 2
-            health_status = "Kebanyakan tanaman dalam kondisi tidak sehat. Perlu dilakukan tindakan lebih lanjut."
         log_message(f"Health Status:{health_status}")
 
         # Buat link untuk membuka koordinat di Google Maps
-        google_maps_link = f"https://www.google.com/maps?q={crop_geo_coord[0]},{crop_geo_coord[1]}"
+        # google_maps_link = f"https://www.google.com/maps?q={crop_geo_coord[0]},{crop_geo_coord[1]}"
         # print(f"Link Google Maps {crop_file}:", google_maps_link)
         
         results_json.append({
-            "crop_file": crop_file,
+            "crop_file": gli_file,
             # "pixel_position": [int(crop_position[0]), int(crop_position[1])],  # Convert to Python int
             "latitude":float(crop_geo_coord[0]),
             "longitude":float(crop_geo_coord[1]),
             # "geo_coordinates": [float(crop_geo_coord[0]), float(crop_geo_coord[1])],  # Convert to Python float
             # "google_maps_link": google_maps_link,
-            "healthy_area": int(healthy_area),  # Convert to Python int
-            "total_area": int(total_area),  # Convert to Python int
-            "healthy_percentage": float(healthy_percentage),  # Convert to Python float
+            "unhealthy_area": int(unhealthy_area),
+            "total_area": int(total_area),
+            "unhealthy_percentage": float(unhealthy_percentage),
             "health_status": health_statusInt,
             "status": health_status
         })
