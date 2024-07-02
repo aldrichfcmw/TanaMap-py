@@ -20,56 +20,49 @@ def btn_predict():
     input_path = path_entry.get()
     input_path = input_path.strip()
     token = token_entry.get()
-    # if not input_path:
-    #     tk.messagebox.showerror(
-    #         title="Invalid Path!", message="Enter a valid output path.")
-    #     return
-    # if not token:
-    #     tk.messagebox.showerror(
-    #         title="Empty Fields!", message="Please enter Token.")
-    #     return
+    if not input_path:
+        tk.messagebox.showerror(
+            title="Invalid Path!", message="Enter a valid output path.")
+        return
+    if not token:
+        tk.messagebox.showerror(
+            title="Empty Fields!", message="Please enter Token.")
+        return
     log_message("Initializing...")
-    #time.sleep(3)
+    time.sleep(3)
     log_message("Checking Server Status....")
-    #time.sleep(2)
+    time.sleep(2)
     server =  check_server()
     if not server:
         log_message("Please Chek Your Connection!")
-    #time.sleep(2)
+    time.sleep(2)
     log_message("Checking YoloV5...")
-    #time.sleep(3)
+    time.sleep(3)
     check_yolo()
-    #time.sleep(3)
+    time.sleep(3)
     log_message("Checking YoloV5 Model...")
-    #time.sleep(3)
+    time.sleep(3)
     check_model()
-    #time.sleep(3)
+    time.sleep(3)
     log_message("Processing Detection...")
-    #time.sleep(3)
+    time.sleep(3)
     predict(jpg_file)
-    #time.sleep(3)
+    time.sleep(3)
     log_message("Checking Data...")
-    #time.sleep(3)
+    time.sleep(3)
     get_latest_folder()
-    #time.sleep(3)
+    time.sleep(3)
     log_message("Processing Image...")
-    #time.sleep(3)
+    time.sleep(3)
     process_crop_images()
-    #time.sleep(3)
+    time.sleep(3)
     log_message("Saving JSON...")
-    #time.sleep(3)
+    time.sleep(3)
     save_results_to_json()
-    #time.sleep(3)
-    # upload_data(token)
-    # cek_data = check_data(input_path)
-    # if not cek_data:
-        # log_message("Stopping...")
-        #time.sleep(1.5)
-        # log_message("Stopped! No Image Exist")
-        # return
-    # log_message("Uploading Data To Server...")
-    #time.sleep(3)
-    # upload_data(token,cek_data)
+    time.sleep(3)
+    log_message("Uploading Data To Server...")
+    time.sleep(3)
+    upload_data(token)
 
 def log_message(message, newline=True):
     # log_entry.config(state=tk.NORMAL)
@@ -174,7 +167,7 @@ def check_model():
         log_message("Model file exists")
     else:
         log_message("Model file doesn't exist. Downloading...")
-        url = "http://tanamap.drik.my.id/model/best.pt"
+        url = "http://tanamap.drik.my.id/models/disease-best.pt"
         download_file(url,model_path)
         log_message("\nSuccessfully downloaded model")
 
@@ -355,9 +348,11 @@ def process_crop_images():
         log_message(f"Total Area: {total_area} pixels")
         log_message(f"Persentase Area Tanaman Tidak Sehat: {unhealthy_percentage:.2f}%")
 
-        # log_message(f"Area Tanaman Sehat: {healthy_area} pixels")
-        # log_message(f"Total Area: {total_area} pixels")
-        # log_message(f"Persentase Area Tanaman Sehat: {healthy_percentage:.2f}%")
+        healthy_area = total_area - unhealthy_area
+        healthy_percentage = 100 - unhealthy_percentage
+        log_message(f"Area Tanaman Sehat: {healthy_area} pixels")
+        log_message(f"Total Area: {total_area} pixels")
+        log_message(f"Persentase Area Tanaman Sehat: {healthy_percentage:.2f}%")
 
         health_status = ""
         if unhealthy_percentage  < 25:
@@ -379,9 +374,9 @@ def process_crop_images():
             "longitude":float(crop_geo_coord[1]),
             # "geo_coordinates": [float(crop_geo_coord[0]), float(crop_geo_coord[1])],  # Convert to Python float
             # "google_maps_link": google_maps_link,
-            "unhealthy_area": int(unhealthy_area),
+            "healthy_area": int(healthy_area),
             "total_area": int(total_area),
-            "unhealthy_percentage": float(unhealthy_percentage),
+            "healthy_percentage": float(healthy_percentage),
             "health_status": health_statusInt,
             "status": health_status
         })
@@ -398,7 +393,7 @@ def save_results_to_json():
     log_message(f"Hasil telah disimpan di {json_path}")
 
 def upload_data(token_bearer):
-    url = 'http://127.0.0.1:8000/api/disease-data'
+    url = 'https://tanamap.drik.my.id/api/disease-data'
 
     headers = {'Authorization': f'Bearer {token_bearer}'}
 
@@ -406,7 +401,7 @@ def upload_data(token_bearer):
 
     # Untuk setiap data, kirim gambar dalam format base64
     for item in results_json:
-        file_path = os.path.join(latest_folder,'crops','rice-fields', item['crop_file'])
+        file_path = os.path.join(latest_folder,'crops','rice-fields-gli', item['crop_file'])
         files = {
             'crop_image': open(file_path, 'rb')
         }
@@ -417,6 +412,7 @@ def upload_data(token_bearer):
             "total_area": item['total_area'],
             "healthy_percentage": item['healthy_percentage'],
             "health_status": item['health_status'],
+            "status": item['status']
         }
         
         response = requests.post(url, headers=headers, files=files, data=payload)
